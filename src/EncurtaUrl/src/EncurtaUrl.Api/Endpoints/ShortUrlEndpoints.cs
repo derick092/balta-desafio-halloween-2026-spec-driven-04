@@ -3,6 +3,7 @@ using EncurtaUrl.Api.Data;
 using EncurtaUrl.Api.Models;
 using EncurtaUrl.Api.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace EncurtaUrl.Api.Endpoints;
@@ -31,6 +32,7 @@ public static class ShortUrlEndpoints
         CreateShortUrlRequest request,
         AppDbContext db,
         IShortCodeGenerator generator,
+        ICustomShortCodeValidator codeValidator,
         HttpRequest http,
         CancellationToken ct)
     {
@@ -42,23 +44,44 @@ public static class ShortUrlEndpoints
             });
         }
 
-        string? code = null;
-
-        for (var attempt = 0; attempt < MaxGenerationAttempts; attempt++)
+        string? code = request.Code;
+        if (code is not null)
         {
-            var candidate = generator.Generate();
-            if (!await db.ShortUrls.AnyAsync(x => x.Code == candidate, ct))
+            var validationError = codeValidator.GetValidationError(code);
+            if (validationError is not null)
             {
-                code = candidate;
-                break;
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["code"] = [validationError]
+                });
+            }
+
+            if (await db.ShortUrls.AnyAsync(x => x.Code == code, ct))
+            {
+                return TypedResults.Problem(
+                    title: "Código em uso.",
+                    detail: "O código informado já está associado a outra URL.",
+                    statusCode: StatusCodes.Status409Conflict);
             }
         }
-
-        if (code is null)
+        else
         {
-            return TypedResults.Problem(
-                title: "Não foi possível gerar um código único.",
-                statusCode: StatusCodes.Status500InternalServerError);
+            for (var attempt = 0; attempt < MaxGenerationAttempts; attempt++)
+            {
+                var candidate = generator.Generate();
+                if (!await db.ShortUrls.AnyAsync(x => x.Code == candidate, ct))
+                {
+                    code = candidate;
+                    break;
+                }
+            }
+
+            if (code is null)
+            {
+                return TypedResults.Problem(
+                    title: "Não foi possível gerar um código único.",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
         }
 
         var shortUrl = new ShortUrl
@@ -68,7 +91,19 @@ public static class ShortUrlEndpoints
         };
 
         db.ShortUrls.Add(shortUrl);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException exception) when (
+            request.Code is not null &&
+            exception.InnerException is SqliteException { SqliteExtendedErrorCode: 2067 })
+        {
+            return TypedResults.Problem(
+                title: "Código em uso.",
+                detail: "O código informado já está associado a outra URL.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
 
         var response = ToResponse(shortUrl, http);
         return TypedResults.Created($"/urls/{shortUrl.Code}", response);

@@ -8,6 +8,31 @@ Content-Type: application/json
   "url": "https://balta.io"
 }
 
+### Criar uma URL curta com código personalizado
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io/halloween",
+  "code": "halloween-link"
+}
+
+### Navegar pelo código personalizado (302 e incremento de clicks)
+GET {{baseUrl}}/halloween-link
+
+### Detalhes do código personalizado
+GET {{baseUrl}}/urls/halloween-link
+
+### Código personalizado já usado (deve retornar 409; execute após a criação acima)
+# Para exercitar também a corrida do índice único, envie duas cópias desta requisição simultaneamente.
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://example.com/another",
+  "code": "halloween-link"
+}
+
 ### URL inválida (deve retornar 400)
 POST {{baseUrl}}/urls
 Content-Type: application/json
@@ -16,10 +41,52 @@ Content-Type: application/json
   "url": "isso-nao-e-uma-url"
 }
 
+### Código com caracteres inválidos (deve retornar 400)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://example.com",
+  "code": "invalid.code"
+}
+
+### Código abaixo do limite mínimo (deve retornar 400)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://example.com",
+  "code": "ab"
+}
+
+### Código acima do limite máximo de 32 caracteres (deve retornar 400)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://example.com",
+  "code": "this-code-is-definitely-over-thirty-two-characters"
+}
+
+### Nome de rota reservado, sem distinção entre maiúsculas e minúsculas (deve retornar 400)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://example.com",
+  "code": "URLs"
+}
+
 ### Listar todas as URLs
 GET {{baseUrl}}/urls
 
 ### Detalhes de uma URL (troque o código)
+GET {{baseUrl}}/urls/aZ3k9Qx
+
+### Listar URLs geradas e personalizadas (mesma resposta para ambas)
+GET {{baseUrl}}/urls
+
+### Detalhes de uma URL gerada automaticamente (troque pelo código retornado na criação)
 GET {{baseUrl}}/urls/aZ3k9Qx
 
 ### Navegar (302 para a URL original)
